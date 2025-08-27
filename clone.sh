@@ -18,7 +18,7 @@ GITHUB_USER="razvanbalsan-boatyardx"
 GITHUB_REPO="bitnami-helm-repo"
 
 # The number of latest versions to fetch for each chart.
-NUM_VERSIONS=5
+NUM_VERSIONS=10
 # --- END CONFIGURATION ---
 
 # The final URL of your GitHub Pages site.
