@@ -14,7 +14,7 @@
 set -e # Exit immediately if a command fails.
 
 # --- SCRIPT CONFIGURATION ---
-GITHUB_USER="razvanbalsan-boatyardx"
+GITHUB_USER="boatyardx"
 GITHUB_REPO="bitnami-helm-repo"
 NUM_VERSIONS=10 # Default number of versions to pull in --all or --latest mode.
 # --- END CONFIGURATION ---
@@ -37,6 +37,7 @@ Options:
                         Sync only a specific chart and version.
   --chart <name> --latest <count>
                         Sync the latest <count> versions of a specific chart.
+  --index-only          Only regenerate the Helm index without downloading any charts.
   -h, --help            Display this help message.
 
 Examples:
@@ -45,6 +46,7 @@ Examples:
   $(basename "$0") --latest 5
   $(basename "$0") --chart wordpress --version 19.2.2
   $(basename "$0") --chart external-dns --latest 5
+  $(basename "$0") --index-only
 EOF
 }
 
@@ -63,6 +65,10 @@ while [[ $# -gt 0 ]]; do
   case $1 in
     --all)
       MODE="all"
+      shift
+      ;;
+    --index-only)
+      MODE="index-only"
       shift
       ;;
     --latest)
@@ -137,13 +143,18 @@ echo "Helm Repo URL will be: ${REPO_URL}"
 echo "Running script from: $(pwd)"
 echo "---"
 
-echo "Step 1: Updating the Bitnami Helm repository..."
-helm repo update bitnami
-echo "---"
+if [ "$MODE" != "index-only" ]; then
+  echo "Step 1: Updating the Bitnami Helm repository..."
+  helm repo update bitnami
+  echo "---"
+fi
 
 # --- Step 2 & 3: Fetch charts based on selected mode ---
 
-if [ "$MODE" == "specific" ]; then
+if [ "$MODE" == "index-only" ]; then
+    echo "Mode: Index Only"
+    echo "Skipping chart downloads. Will only regenerate the index."
+elif [ "$MODE" == "specific" ]; then
     echo "Mode: Specific Chart Version"
     echo "Pulling chart: ${CHART_NAME}, version: ${CHART_VERSION}"
     if [ -f "${CHART_NAME}-${CHART_VERSION}.tgz" ]; then
