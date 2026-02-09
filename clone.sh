@@ -227,15 +227,24 @@ echo "Step 4: Re-indexing the repository..."
 helm repo index . --url "${REPO_URL}"
 echo "---"
 
-echo "Step 5: Committing and pushing to GitHub..."
+echo "Step 5: Checking for changes..."
 git add .
 if git diff-index --quiet HEAD; then
     echo "No new chart versions to commit. Repository is up-to-date."
 else
-    git commit -m "Update Helm charts - $(date)"
-    echo "Pushing to GitHub..."
-    git push origin main
-    echo "Successfully pushed to GitHub. It may take a minute for GitHub Pages to update."
+    echo "Changes detected and staged for commit."
+    echo ""
+    read -p "Do you want to commit and push to GitHub? (y/n): " -n 1 -r
+    echo ""
+    if [[ $REPLY =~ ^[Yy]$ ]]; then
+        git commit -m "Update Helm charts - $(date)"
+        echo "Pushing to GitHub..."
+        git push origin main
+        echo "Successfully pushed to GitHub. It may take a minute for GitHub Pages to update."
+    else
+        echo "Skipping commit and push. Changes are staged but not committed."
+        echo "Run 'git status' to see staged changes."
+    fi
 fi
 echo "---"
 echo "All done!"
