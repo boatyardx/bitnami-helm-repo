@@ -35,6 +35,8 @@ Options:
                         Requires 'curl' and 'jq'.
   --chart <name> --version <version>
                         Sync only a specific chart and version.
+  --chart <name> --latest <count>
+                        Sync the latest <count> versions of a specific chart.
   -h, --help            Display this help message.
 
 Examples:
@@ -42,6 +44,7 @@ Examples:
   $(basename "$0") --all
   $(basename "$0") --latest 5
   $(basename "$0") --chart wordpress --version 19.2.2
+  $(basename "$0") --chart external-dns --latest 5
 EOF
 }
 
@@ -50,6 +53,7 @@ MODE="all" # Default mode
 LATEST_COUNT=0
 CHART_NAME=""
 CHART_VERSION=""
+CHART_LATEST_COUNT=0
 
 if [ $# -eq 0 ]; then
   echo "No options provided. Defaulting to '--all' mode."
@@ -62,29 +66,43 @@ while [[ $# -gt 0 ]]; do
       shift
       ;;
     --latest)
-      MODE="latest"
-      if [[ ! "$2" =~ ^[0-9]+$ ]]; then
+      if [ -z "$2" ] || [[ ! "$2" =~ ^[0-9]+$ ]]; then
         echo "Error: --latest requires a number." >&2; usage; exit 1
       fi
-      LATEST_COUNT="$2"
+      # Check if this is being used with --chart
+      if [ -n "$CHART_NAME" ]; then
+        MODE="chart-latest"
+        CHART_LATEST_COUNT="$2"
+      else
+        MODE="latest"
+        LATEST_COUNT="$2"
+      fi
       shift 2
       ;;
     --chart)
-      MODE="specific"
       if [ -z "$2" ]; then
         echo "Error: --chart requires a name." >&2; usage; exit 1
       fi
       CHART_NAME="$2"
+      # If --latest was already parsed, update MODE
+      if [ "$MODE" == "latest" ] && [ $LATEST_COUNT -gt 0 ]; then
+        MODE="chart-latest"
+        CHART_LATEST_COUNT=$LATEST_COUNT
+        LATEST_COUNT=0
+      else
+        MODE="specific"
+      fi
       shift 2
       ;;
     --version)
-      if [ "$MODE" != "specific" ]; then
+      if [ -z "$CHART_NAME" ]; then
         echo "Error: --version can only be used with --chart." >&2; usage; exit 1
       fi
       if [ -z "$2" ]; then
         echo "Error: --version requires a version number." >&2; usage; exit 1
       fi
       CHART_VERSION="$2"
+      MODE="specific"
       shift 2
       ;;
     -h|--help)
@@ -99,11 +117,18 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 
-# Validate that --chart and --version were used together
-if [ "$MODE" == "specific" ] && [ -z "$CHART_VERSION" ]; then
-    echo "Error: --version is required when using --chart." >&2
+# Validate chart-related options
+if [ -n "$CHART_NAME" ]; then
+  if [ -z "$CHART_VERSION" ] && [ $CHART_LATEST_COUNT -eq 0 ]; then
+    echo "Error: --chart requires either --version or --latest." >&2
     usage
     exit 1
+  fi
+  if [ -n "$CHART_VERSION" ] && [ $CHART_LATEST_COUNT -gt 0 ]; then
+    echo "Error: --chart cannot be used with both --version and --latest." >&2
+    usage
+    exit 1
+  fi
 fi
 
 # --- Main Logic ---
@@ -119,13 +144,29 @@ echo "---"
 # --- Step 2 & 3: Fetch charts based on selected mode ---
 
 if [ "$MODE" == "specific" ]; then
-    echo "Mode: Specific Chart"
+    echo "Mode: Specific Chart Version"
     echo "Pulling chart: ${CHART_NAME}, version: ${CHART_VERSION}"
     if [ -f "${CHART_NAME}-${CHART_VERSION}.tgz" ]; then
         echo "  - Chart already exists. Skipping download."
     else
         helm pull "bitnami/${CHART_NAME}" --version "${CHART_VERSION}" --destination .
     fi
+elif [ "$MODE" == "chart-latest" ]; then
+    echo "Mode: Latest Versions of Specific Chart"
+    echo "Pulling the latest ${CHART_LATEST_COUNT} versions of chart: ${CHART_NAME}"
+    versions_to_pull=$(helm search repo "bitnami/${CHART_NAME}" -l --max-col-width 200 | awk 'NR>1 {print $2}' | head -n "${CHART_LATEST_COUNT}")
+    if [ -z "$versions_to_pull" ]; then
+        echo "Error: Could not find versions for ${CHART_NAME}." >&2
+        exit 1
+    fi
+    for version in $versions_to_pull; do
+        if [ -f "${CHART_NAME}-${version}.tgz" ]; then
+            echo "  - Version ${version} already exists. Skipping."
+        else
+            echo "  - Pulling version ${version}..."
+            helm pull "bitnami/${CHART_NAME}" --version "${version}" --destination .
+        fi
+    done
 else
     # This block handles both 'all' and 'latest' modes
     chart_names=""
